@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "easy-appointments-client"
+version = "0.1.0"
+description = "Async Python client for Easy Appointments API"
+authors = ["Voctra AI <info@voctra.ai>"]
+readme = "README.md"
+packages = [{include = "easyappointments"}]
+
+[tool.poetry.dependencies]
+python = ">=3.9,<4.0"
+httpx = "^0.28.1"
+pydantic = "^2.11.7"
+tenacity = "^9.1.2"
+
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.4.1"
+pytest-asyncio = "^0.23.8"
+black = "^25.1.0"
+isort = "^6.0.1"
+mypy = "^1.16.1"
+pytest-cov = "^6.2.1"
+respx = "^0.22.0"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
