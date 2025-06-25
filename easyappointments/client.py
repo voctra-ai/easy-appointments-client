@@ -7,6 +7,7 @@ import httpx
 
 from easyappointments.api.admins import AdminsAPI
 from easyappointments.api.providers import ProvidersAPI
+from easyappointments.api.customers import CustomersAPI
 
 
 class EasyAppointmentsClient:
@@ -56,6 +57,16 @@ class EasyAppointmentsClient:
         )
         
         self.providers = ProvidersAPI(
+            api_key, 
+            base_url, 
+            http_client=self._http_client,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+            timeout=timeout,
+            logging_enabled=logging_enabled
+        )
+        
+        self.customers = CustomersAPI(
             api_key, 
             base_url, 
             http_client=self._http_client,
