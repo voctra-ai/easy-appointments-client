@@ -15,17 +15,48 @@ class CustomersAPI(BaseAPI):
     listing, creating, updating, and deleting customers.
     """
     
-    async def list_customers(self) -> PaginatedResponse[Customer]:
+    async def list_customers(
+        self,
+        page: int = 1,
+        length: int = 10,
+        sort: str = "-id"
+    ) -> PaginatedResponse[Customer]:
         """
-        List all customers.
+        List all customers with pagination support.
         
+        Args:
+            page: Page number (1-based)
+            length: Number of items per page
+            sort: Sort order (prefix with - for descending)
+            
         Returns:
             PaginatedResponse containing Customer objects
             
         Raises:
             EasyAppointmentsError: If the API request fails
+            
+        Example:
+            ```python
+            # Get first page of 10 customers, sorted by ID descending (default)
+            customers = await client.customers.list_customers()
+            
+            # Get second page with 20 items per page
+            customers = await client.customers.list_customers(page=2, length=20)
+            
+            # Sort by last name ascending
+            customers = await client.customers.list_customers(sort="last_name")
+            
+            # Access the customer objects
+            for customer in customers.results:
+                print(f"Customer: {customer.first_name} {customer.last_name} (ID: {customer.id})")
+            ```
         """
-        response = await self._get("/customers")
+        params = {
+            "page": page,
+            "length": length,
+            "sort": sort
+        }
+        response = await self._get("/customers", params=params)
         return PaginatedResponse.from_dict(response, Customer)
     
     async def get_customer(self, customer_id: int) -> Customer:

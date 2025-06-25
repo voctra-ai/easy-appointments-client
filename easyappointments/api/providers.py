@@ -22,10 +22,20 @@ class ProvidersAPI(BaseAPI):
         delete_provider(provider_id: int) -> None: Delete a provider
     """
     
-    async def list_providers(self) -> PaginatedResponse[Provider]:
+    async def list_providers(
+        self,
+        page: int = 1,
+        length: int = 10,
+        sort: str = "-id"
+    ) -> PaginatedResponse[Provider]:
         """
-        List all providers.
+        List all providers with pagination support.
         
+        Args:
+            page: Page number (1-based)
+            length: Number of items per page
+            sort: Sort order (prefix with - for descending)
+            
         Returns:
             PaginatedResponse containing Provider objects
             
@@ -34,15 +44,26 @@ class ProvidersAPI(BaseAPI):
             
         Example:
             ```python
-            # Get all providers
+            # Get first page of 10 providers, sorted by ID descending (default)
             providers = await client.providers.list_providers()
+            
+            # Get second page with 20 items per page
+            providers = await client.providers.list_providers(page=2, length=20)
+            
+            # Sort by name ascending
+            providers = await client.providers.list_providers(sort="first_name")
             
             # Access the provider objects
             for provider in providers.results:
                 print(f"Provider: {provider.first_name} {provider.last_name} (ID: {provider.id})")
             ```
         """
-        response = await self._get("/providers")
+        params = {
+            "page": page,
+            "length": length,
+            "sort": sort
+        }
+        response = await self._get("/providers", params=params)
         return PaginatedResponse.from_dict(response, Provider)
     
     async def get_provider(self, provider_id: int) -> Provider:

@@ -6,6 +6,7 @@ from easyappointments.models.admin import Admin
 from easyappointments.models.provider import Provider, ProviderSettings
 from easyappointments.models.customer import Customer, CustomerSettings
 from easyappointments.models.paginated_response import PaginatedResponse
+from easyappointments.models.availability import Availability, TimeSlot
 
 __all__ = [
     "Admin", 
@@ -13,5 +14,7 @@ __all__ = [
     "ProviderSettings", 
     "Customer",
     "CustomerSettings",
-    "PaginatedResponse"
+    "PaginatedResponse",
+    "Availability",
+    "TimeSlot"
 ]

@@ -3,8 +3,7 @@ Base API client module providing common functionality for all API managers.
 """
 import json
 import logging
-import time
-from typing import Any, Dict, List, Optional, Type, TypeVar, Union, cast
+from typing import Any, Dict, List, Optional, TypeVar, Union
 from urllib.parse import urljoin
 
 import httpx

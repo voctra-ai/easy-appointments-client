@@ -4,11 +4,11 @@ End-to-end tests for the Easy Appointments client.
 These tests require a running Easy Appointments instance and a valid API key.
 """
 import os
-import asyncio
-import pytest
-import pytest_asyncio
 from datetime import datetime
 from typing import AsyncGenerator
+
+import pytest
+import pytest_asyncio
 
 from easyappointments import EasyAppointmentsClient
 from easyappointments.models import Provider, ProviderSettings, Admin, Customer
@@ -45,24 +45,36 @@ class TestE2E:
 
     async def test_provider_workflow(self, client: EasyAppointmentsClient):
         """Test the complete workflow: list admins -> list providers -> create provider -> verify -> delete."""
-        # 1. List all admins
+        # 1. List all admins with pagination
         print("\n=== 1. Listing All Admins ===")
         admins_response = await client.admins.list_admins()
+        
+        # Verify pagination response structure
         assert hasattr(admins_response, 'results'), "Response should have 'results' attribute"
+        assert hasattr(admins_response, 'total'), "Response should have 'total' attribute"
+        assert hasattr(admins_response, 'next'), "Response should have 'next' attribute"
+        assert hasattr(admins_response, 'previous'), "Response should have 'previous' attribute"
+        
         admins: list[Admin] = admins_response.results
         assert isinstance(admins, list)
-        print(f"Found {len(admins)} admins")
+        print(f"Found {len(admins)} of {admins_response.total} total admins")
         for admin in admins[:5]:  # Print first 5 admins
             print(f"- {admin.first_name} {admin.last_name} ({admin.email})")
 
-        # 2. List existing providers
+        # 2. List existing providers with pagination
         print("\n=== 2. Listing Existing Providers ===")
         providers_response = await client.providers.list_providers()
+        
+        # Verify pagination response structure
         assert hasattr(providers_response, 'results'), "Response should have 'results' attribute"
+        assert hasattr(providers_response, 'total'), "Response should have 'total' attribute"
+        assert hasattr(providers_response, 'next'), "Response should have 'next' attribute"
+        assert hasattr(providers_response, 'previous'), "Response should have 'previous' attribute"
+        
         providers: list[Provider] = providers_response.results
         assert isinstance(providers, list)
-        initial_provider_count = len(providers)
-        print(f"Found {initial_provider_count} existing providers")
+        initial_provider_count = providers_response.total
+        print(f"Found {len(providers)} of {initial_provider_count} total providers")
         
         # 3. Create a new provider
         print("\n=== 3. Creating New Test Provider ===")
@@ -85,6 +97,7 @@ class TestE2E:
             last_name=f"Provider {TEST_TIMESTAMP}",
             email=TEST_PROVIDER_EMAIL,
             phone="123-456-7890",
+            timezone="UTC",  # Set a valid timezone
             settings=settings,
             services=[1]  # Assuming service with ID 1 exists
         )
@@ -97,19 +110,73 @@ class TestE2E:
         print(f"Name: {created_provider.first_name} {created_provider.last_name}")
         print(f"Email: {created_provider.email}")
 
-        # 4. Verify the provider was created by listing all providers again
+        # 4. Verify the provider was created by searching for them directly
         print("\n=== 4. Verifying Provider Creation ===")
-        updated_providers_response = await client.providers.list_providers()
-        updated_providers = updated_providers_response.results
-        assert len(updated_providers) == initial_provider_count + 1, "Provider count should increase by 1"
-        
-        # Verify the new provider is in the list
-        provider_ids = [p.id for p in updated_providers] if updated_providers else []
-        assert created_provider.id in provider_ids, "New provider ID should be in the list"
-        print(f"Successfully verified provider {created_provider.id} exists")
+        # Try to fetch the provider directly by ID first
+        try:
+            found_provider = await client.providers.get_provider(created_provider.id)
+            assert found_provider is not None
+            assert found_provider.email == created_provider.email
+            print(f"Successfully verified provider {created_provider.id} exists")
+        except Exception as e:
+            # If direct fetch fails, try to find in paginated results as fallback
+            print(f"Direct fetch failed, falling back to paginated search: {e}")
+            page = 1
+            found = False
+            
+            while not found:
+                updated_providers_response = await client.providers.list_providers(
+                    page=page,
+                    sort="-id"  # Sort by ID descending to find newest first
+                )
+                updated_providers = updated_providers_response.results
+                
+                if not updated_providers:
+                    break
+                    
+                # Check if our new provider is on this page
+                if any(p.id == created_provider.id for p in updated_providers):
+                    found = True
+                    print(f"Found new provider on page {page}")
+                    break
+                    
+                if not updated_providers_response.next:
+                    break
+                    
+                page += 1
+            
+            assert found, f"New provider with ID {created_provider.id} not found in any page"
+            print(f"Successfully verified provider {created_provider.id} exists via pagination")
 
-        # 5. Clean up: Delete the provider we created
-        print("\n=== 5. Cleaning Up: Deleting Test Provider ===")
+        # 5. Get provider availability
+        print("\n=== 5. Checking Provider Availability ===")
+        # Use a default service ID (1) - in a real test, you might want to create a service first
+        service_id = 1
+        # Use a date in the future to ensure we have availability
+        from datetime import datetime, timedelta
+        future_date = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
+        
+        try:
+            availability = await client.availabilities.get_provider_availability(
+                provider_id=created_provider.id,
+                service_id=service_id,
+                date_str=future_date
+            )
+        except Exception as e:
+            print(f"Error checking availability: {e}")
+            # Continue with the test to ensure cleanup happens
+            availability = None
+        
+        if availability is not None:
+            print(f"Availability for provider {created_provider.id} on {future_date}:")
+            if availability.available:
+                for slot in availability.available:
+                    print(f"  Available: {slot.start} - {slot.end}")
+            else:
+                print("  No available time slots")
+        
+        # 6. Clean up: Delete the provider we created
+        print("\n=== 6. Cleaning Up: Deleting Test Provider ===")
         await client.providers.delete_provider(created_provider.id)
         
         # Verify deletion by checking the provider count went back to original
@@ -122,17 +189,24 @@ class TestE2E:
         assert created_provider.id not in final_provider_ids, "Provider ID should be removed after deletion"
         
         print(f"Successfully deleted test provider with ID: {created_provider.id}")
+        print("\n✅ All provider workflow tests completed successfully!")
     
     async def test_customer_workflow(self, client: EasyAppointmentsClient):
         """Test the complete workflow: list customers -> create customer -> verify -> delete."""
-        # 1. List existing customers
+        # 1. List existing customers with pagination
         print("\n=== 1. Listing Existing Customers ===")
         customers_response = await client.customers.list_customers()
+        
+        # Verify pagination response structure
         assert hasattr(customers_response, 'results'), "Response should have 'results' attribute"
-        customers = customers_response.results
-        assert isinstance(customers, list), "Customers should be a list"
-        initial_customer_count = len(customers)
-        print(f"Found {initial_customer_count} existing customers")
+        assert hasattr(customers_response, 'total'), "Response should have 'total' attribute"
+        assert hasattr(customers_response, 'next'), "Response should have 'next' attribute"
+        assert hasattr(customers_response, 'previous'), "Response should have 'previous' attribute"
+        
+        customers: list[Customer] = customers_response.results
+        assert isinstance(customers, list)
+        initial_customer_count = customers_response.total
+        print(f"Found {len(customers)} of {initial_customer_count} total customers")
         
         # 2. Create a new customer
         print("\n=== 2. Creating New Test Customer ===")
@@ -155,16 +229,44 @@ class TestE2E:
         print(f"Name: {created_customer.first_name} {created_customer.last_name}")
         print(f"Email: {created_customer.email}")
         
-        # 3. Verify the customer was created by listing all customers again
+        # 3. Verify the customer was created by searching for them directly
         print("\n=== 3. Verifying Customer Creation ===")
-        updated_customers_response = await client.customers.list_customers()
-        updated_customers = updated_customers_response.results
-        assert len(updated_customers) == initial_customer_count + 1, "Customer count should increase by 1"
-        
-        # Verify the new customer is in the list
-        customer_ids = [c.id for c in updated_customers] if updated_customers else []
-        assert created_customer.id in customer_ids, "New customer ID should be in the list"
-        print(f"Successfully verified customer {created_customer.id} exists")
+        # Instead of checking count (which is affected by pagination),
+        # directly fetch the customer by ID to verify it was created
+        try:
+            found_customer = await client.customers.get_customer(created_customer.id)
+            assert found_customer is not None
+            assert found_customer.email == created_customer.email
+            print(f"Successfully verified customer {created_customer.id} exists")
+        except Exception as e:
+            # If direct fetch fails, try to find in paginated results as fallback
+            print(f"Direct fetch failed, falling back to paginated search: {e}")
+            page = 1
+            found = False
+            
+            while not found:
+                updated_customers_response = await client.customers.list_customers(
+                    page=page,
+                    sort="-id"  # Sort by ID descending to find newest first
+                )
+                updated_customers = updated_customers_response.results
+                
+                if not updated_customers:
+                    break
+                    
+                # Check if our new customer is on this page
+                if any(c.id == created_customer.id for c in updated_customers):
+                    found = True
+                    print(f"Found new customer on page {page}")
+                    break
+                    
+                if not updated_customers_response.next:
+                    break
+                    
+                page += 1
+            
+            assert found, f"New customer with ID {created_customer.id} not found in any page"
+            print(f"Successfully verified customer {created_customer.id} exists via pagination")
         
         # 4. Get the customer by ID to verify details
         print("\n=== 4. Verifying Customer Details ===")
