@@ -1,22 +1,34 @@
 # Easy Appointments Async Python Client
 
-An async Python client for the Easy Appointments API using Poetry for dependency management.
+An async Python client for the Easy Appointments API.
 
 ## Features
 
 - Fully async API using `httpx`
-- Type-hinted API with Pydantic models
+- Type-hinted with Pydantic models
 - Automatic retry with exponential backoff
 - Comprehensive error handling
-- Modular design for easy extension
 
-## Resources
+## Quick Start (Setting Easy Appointments server locally)
 
-- Swagger spec doc: http://localhost:8000/#/
+1. Start the Easy Appointments server:
+   ```bash
+   docker compose up -d
+   ```
+   Access it at http://localhost
+
+2. Create an admin account at http://localhost/
+
+3. Generate an API key:
+   - Go to Profile > Settings > Integrations > API
+   - Create and copy your API key
+
+## Documentation
+
+- [Easy Appointments REST API](https://easyappointments.org/docs.html#1.5.1/rest-api.md)
+- Local Swagger UI: http://localhost:8000/#/
 - Sample CURL requests: `docs/sample-curls.txt`
 - OpenAPI specs: `docs/openapi.yml`
-- Basic requests: `examples/basic_usage.py`
-- Easy Appointments API Document: https://easyappointments.org/docs.html#1.5.1/rest-api.md
 
 ## Installation
 
@@ -102,38 +114,6 @@ async def main():
         print(f"Found {len(admins.results)} admins:")
         for admin in admins.results:
             print(f"- {admin.first_name} {admin.last_name} ({admin.email})")
-
-        # Create a new provider with working hours
-        from easyappointments.models import Provider, ProviderSettings, WorkingPlan
-
-        # Create provider settings with working plan
-        settings = ProviderSettings(
-            username="johndoe",
-            password="SecurePassword123!",
-            working_plan={
-                "sunday": {"start": None, "end": None, "breaks": []},
-                "monday": {"start": "09:00", "end": "17:00", "breaks": [{"start": "12:00", "end": "13:00"}]},
-                "tuesday": {"start": "09:00", "end": "17:00", "breaks": [{"start": "12:00", "end": "13:00"}]},
-                "wednesday": {"start": "09:00", "end": "17:00", "breaks": [{"start": "12:00", "end": "13:00"}]},
-                "thursday": {"start": "09:00", "end": "17:00", "breaks": [{"start": "12:00", "end": "13:00"}]},
-                "friday": {"start": "09:00", "end": "17:00", "breaks": [{"start": "12:00", "end": "13:00"}]},
-                "saturday": {"start": None, "end": None, "breaks": []}
-            }
-        )
-
-        # Create provider
-        new_provider = Provider(
-            first_name="John",
-            last_name="Doe",
-            email="john.doe@example.com",
-            phone="123-456-7890",
-            settings=settings,
-            services=[1]  # Service IDs the provider offers
-        )
-
-        # Create the provider
-        created_provider = await client.providers.create_provider(new_provider)
-        print(f"Created provider with ID: {created_provider.id}")
 
     finally:
         # Close the client
