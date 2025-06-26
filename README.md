@@ -10,6 +10,14 @@ An async Python client for the Easy Appointments API using Poetry for dependency
 - Comprehensive error handling
 - Modular design for easy extension
 
+## Resources
+
+- Swagger spec doc: http://localhost:8000/#/
+- Sample CURL requests: `docs/sample-curls.txt`
+- OpenAPI specs: `docs/openapi.yml`
+- Basic requests: `examples/basic_usage.py`
+- Easy Appointments API Document: https://easyappointments.org/docs.html#1.5.1/rest-api.md
+
 ## Installation
 
 ```bash
@@ -50,36 +58,13 @@ pytest --cov=easyappointments tests/
 pytest --cov=easyappointments --cov-report=html tests/
 
 # Run a specific test file
-pytest tests/test_models.py
+pytest tests/test_e2e.py
 
 # Run a specific test case
-pytest tests/test_models.py::TestAdminModels
+pytest -xvs tests/test_e2e.py::TestE2E::test_provider_workflow
 
 # Run tests with verbose output
 pytest -v tests/
-```
-
-### Code style and linting
-
-This project uses:
-- `black` for code formatting
-- `isort` for import sorting
-- `mypy` for type checking
-
-To format and check the code:
-
-```bash
-# Format code with black
-black .
-
-# Sort imports with isort
-isort .
-
-# Check types with mypy
-mypy .
-
-# Run all checks
-black . && isort . && mypy .
 ```
 
 ### Pre-commit hooks

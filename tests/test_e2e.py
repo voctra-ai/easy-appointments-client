@@ -43,6 +43,108 @@ class TestE2E:
         finally:
             await client.close()
 
+    async def test_customer_workflow(self, client: EasyAppointmentsClient):
+        """Test the complete workflow: list customers -> create customer -> verify -> delete."""
+        # 1. List existing customers with pagination
+        print("\n=== 1. Listing Existing Customers ===")
+        customers_response = await client.customers.list_customers()
+
+        # Verify pagination response structure
+        assert hasattr(customers_response, 'results'), "Response should have 'results' attribute"
+        assert hasattr(customers_response, 'total'), "Response should have 'total' attribute"
+        assert hasattr(customers_response, 'next'), "Response should have 'next' attribute"
+        assert hasattr(customers_response, 'previous'), "Response should have 'previous' attribute"
+
+        customers: list[Customer] = customers_response.results
+        assert isinstance(customers, list)
+        initial_customer_count = customers_response.total
+        print(f"Found {len(customers)} of {initial_customer_count} total customers")
+
+        # 2. Create a new customer
+        print("\n=== 2. Creating New Test Customer ===")
+        new_customer = Customer(
+            first_name="Test",
+            last_name=f"Customer {TEST_TIMESTAMP}",
+            email=TEST_CUSTOMER_EMAIL,
+            phone="123-456-7890",
+            address="123 Test St",
+            city="Testville",
+            state="TS",
+            zip="12345"
+        )
+
+        # Create the customer
+        created_customer = await client.customers.create_customer(new_customer)
+        assert created_customer.id is not None
+        assert created_customer.email == TEST_CUSTOMER_EMAIL
+        print(f"Created customer with ID: {created_customer.id}")
+        print(f"Name: {created_customer.first_name} {created_customer.last_name}")
+        print(f"Email: {created_customer.email}")
+
+        # 3. Verify the customer was created by searching for them directly
+        print("\n=== 3. Verifying Customer Creation ===")
+        # Instead of checking count (which is affected by pagination),
+        # directly fetch the customer by ID to verify it was created
+        try:
+            found_customer = await client.customers.get_customer(created_customer.id)
+            assert found_customer is not None
+            assert found_customer.email == created_customer.email
+            print(f"Successfully verified customer {created_customer.id} exists")
+        except Exception as e:
+            # If direct fetch fails, try to find in paginated results as fallback
+            print(f"Direct fetch failed, falling back to paginated search: {e}")
+            page = 1
+            found = False
+
+            while not found:
+                updated_customers_response = await client.customers.list_customers(
+                    page=page,
+                    sort="-id"  # Sort by ID descending to find newest first
+                )
+                updated_customers = updated_customers_response.results
+
+                if not updated_customers:
+                    break
+
+                # Check if our new customer is on this page
+                if any(c.id == created_customer.id for c in updated_customers):
+                    found = True
+                    print(f"Found new customer on page {page}")
+                    break
+
+                if not updated_customers_response.next:
+                    break
+
+                page += 1
+
+            assert found, f"New customer with ID {created_customer.id} not found in any page"
+            print(f"Successfully verified customer {created_customer.id} exists via pagination")
+
+        # 4. Get the customer by ID to verify details
+        print("\n=== 4. Verifying Customer Details ===")
+        fetched_customer = await client.customers.get_customer(created_customer.id)
+        assert fetched_customer.id == created_customer.id
+        assert fetched_customer.email == TEST_CUSTOMER_EMAIL
+        assert fetched_customer.first_name == "Test"
+        assert fetched_customer.last_name == f"Customer {TEST_TIMESTAMP}"
+        print("Successfully verified customer details")
+
+        # 5. Clean up: Delete the customer we created
+        print("\n=== 5. Cleaning Up: Deleting Test Customer ===")
+        await client.customers.delete_customer(created_customer.id)
+
+        # Verify deletion by checking the customer count went back to original
+        final_customers_response = await client.customers.list_customers()
+        final_customers = final_customers_response.results if final_customers_response else []
+        assert len(final_customers) == initial_customer_count, "Customer count should return to original after deletion"
+
+        # Verify the customer ID is no longer in the list
+        final_customer_ids = [c.id for c in final_customers] if final_customers else []
+        assert created_customer.id not in final_customer_ids, "Customer ID should be removed after deletion"
+
+        print(f"Successfully deleted test customer with ID: {created_customer.id}")
+        print("\n✅ All tests completed successfully!")
+
     async def test_provider_workflow(self, client: EasyAppointmentsClient):
         """Test the complete workflow: list admins -> list providers -> create provider -> verify -> delete."""
         # 1. List all admins with pagination
@@ -172,125 +274,103 @@ class TestE2E:
             if availability.available:
                 for slot in availability.available:
                     print(f"  Available: {slot.start} - {slot.end}")
+                
+                # 6. Create a test customer
+                print("\n=== 6. Creating Test Customer ===")
+                from easyappointments.models import Customer, CustomerSettings
+                
+                test_customer = Customer(
+                    first_name="Test",
+                    last_name="Customer",
+                    email=f"test.customer.{int(datetime.now().timestamp())}@example.com",
+                    phone="123-456-7890",
+                    settings=CustomerSettings(
+                        username=f"testuser{int(datetime.now().timestamp())}",
+                        timezone="UTC"
+                    )
+                )
+                
+                created_customer = await client.customers.create_customer(test_customer)
+                print(f"Created test customer with ID: {created_customer.id}")
+                
+                # 7. Book an appointment
+                print("\n=== 7. Booking Test Appointment ===")
+                from easyappointments.models import Appointment
+                
+                # Get the first available time slot and format with the date
+                first_slot = availability.available[0]
+                # Format as "YYYY-MM-DD HH:MM:SS" as required by the API
+                start_datetime = f"{future_date} {first_slot.start}:00"
+                end_datetime = f"{future_date} {first_slot.end}:00"
+                
+                appointment = Appointment(
+                    start=start_datetime,
+                    end=end_datetime,
+                    location="Test Location",
+                    notes="Test appointment",
+                    customer_id=created_customer.id,
+                    provider_id=created_provider.id,
+                    service_id=service_id
+                )
+                
+                created_appointment = await client.appointments.create_appointment(appointment)
+                print(f"Booked appointment with ID: {created_appointment.id}")
+                
+                # 8. Get the created appointment
+                print("\n=== 8. Getting Appointment Details ===")
+                fetched_appointment = await client.appointments.get_appointment(created_appointment.id)
+                assert fetched_appointment is not None, "Failed to fetch created appointment"
+                assert fetched_appointment.id == created_appointment.id, "Appointment ID mismatch"
+                print(f"Successfully fetched appointment: {fetched_appointment.id}")
+                
+                # 9. Update the appointment
+                print("\n=== 9. Updating Appointment ===")
+                update_data = created_appointment.model_dump(by_alias=True, exclude_unset=True)
+                update_data['notes'] = 'Updated test appointment notes'
+                update_data['status'] = 'cancelled'
+                
+                updated_appointment = await client.appointments.update_appointment(
+                    created_appointment.id,
+                    Appointment(**update_data)
+                )
+                assert updated_appointment.notes == 'Updated test appointment notes', "Failed to update appointment notes"
+                print("Successfully updated appointment")
+                
+                # 10. Delete the appointment
+                print("\n=== 10. Deleting Test Appointment ===")
+                delete_result = await client.appointments.delete_appointment(created_appointment.id)
+                assert delete_result, "Failed to delete appointment"
+                
+                # Verify deletion
+                deleted_appointment = await client.appointments.get_appointment(created_appointment.id)
+                assert deleted_appointment is None, "Appointment should be deleted but still exists"
+                print("Successfully deleted test appointment")
+                
+                # 11. Delete the test customer
+                print("\n=== 11. Deleting Test Customer ===")
+                delete_customer_result = await client.customers.delete_customer(created_customer.id)
+                assert delete_customer_result, "Failed to delete test customer"
+                
+                # Verify customer deletion
+                deleted_customer = await client.customers.get_customer(created_customer.id)
+                assert deleted_customer is None, "Customer should be deleted but still exists"
+                print("Successfully deleted test customer")
             else:
-                print("  No available time slots")
+                assert False, "Test failed: No availability found"
         
-        # 6. Clean up: Delete the provider we created
-        print("\n=== 6. Cleaning Up: Deleting Test Provider ===")
+        # 12. Clean up: Delete the provider we created
+        print("\n=== 12. Cleaning Up: Deleting Test Provider ===")
         await client.providers.delete_provider(created_provider.id)
-        
+
         # Verify deletion by checking the provider count went back to original
         final_providers_response = await client.providers.list_providers()
         final_providers = final_providers_response.results if final_providers_response else []
         assert len(final_providers) == initial_provider_count, "Provider count should return to original after deletion"
-        
+
         # Verify the provider ID is no longer in the list
         final_provider_ids = [p.id for p in final_providers] if final_providers else []
         assert created_provider.id not in final_provider_ids, "Provider ID should be removed after deletion"
         
         print(f"Successfully deleted test provider with ID: {created_provider.id}")
         print("\n✅ All provider workflow tests completed successfully!")
-    
-    async def test_customer_workflow(self, client: EasyAppointmentsClient):
-        """Test the complete workflow: list customers -> create customer -> verify -> delete."""
-        # 1. List existing customers with pagination
-        print("\n=== 1. Listing Existing Customers ===")
-        customers_response = await client.customers.list_customers()
-        
-        # Verify pagination response structure
-        assert hasattr(customers_response, 'results'), "Response should have 'results' attribute"
-        assert hasattr(customers_response, 'total'), "Response should have 'total' attribute"
-        assert hasattr(customers_response, 'next'), "Response should have 'next' attribute"
-        assert hasattr(customers_response, 'previous'), "Response should have 'previous' attribute"
-        
-        customers: list[Customer] = customers_response.results
-        assert isinstance(customers, list)
-        initial_customer_count = customers_response.total
-        print(f"Found {len(customers)} of {initial_customer_count} total customers")
-        
-        # 2. Create a new customer
-        print("\n=== 2. Creating New Test Customer ===")
-        new_customer = Customer(
-            first_name="Test",
-            last_name=f"Customer {TEST_TIMESTAMP}",
-            email=TEST_CUSTOMER_EMAIL,
-            phone="123-456-7890",
-            address="123 Test St",
-            city="Testville",
-            state="TS",
-            zip="12345"
-        )
-        
-        # Create the customer
-        created_customer = await client.customers.create_customer(new_customer)
-        assert created_customer.id is not None
-        assert created_customer.email == TEST_CUSTOMER_EMAIL
-        print(f"Created customer with ID: {created_customer.id}")
-        print(f"Name: {created_customer.first_name} {created_customer.last_name}")
-        print(f"Email: {created_customer.email}")
-        
-        # 3. Verify the customer was created by searching for them directly
-        print("\n=== 3. Verifying Customer Creation ===")
-        # Instead of checking count (which is affected by pagination),
-        # directly fetch the customer by ID to verify it was created
-        try:
-            found_customer = await client.customers.get_customer(created_customer.id)
-            assert found_customer is not None
-            assert found_customer.email == created_customer.email
-            print(f"Successfully verified customer {created_customer.id} exists")
-        except Exception as e:
-            # If direct fetch fails, try to find in paginated results as fallback
-            print(f"Direct fetch failed, falling back to paginated search: {e}")
-            page = 1
-            found = False
-            
-            while not found:
-                updated_customers_response = await client.customers.list_customers(
-                    page=page,
-                    sort="-id"  # Sort by ID descending to find newest first
-                )
-                updated_customers = updated_customers_response.results
-                
-                if not updated_customers:
-                    break
-                    
-                # Check if our new customer is on this page
-                if any(c.id == created_customer.id for c in updated_customers):
-                    found = True
-                    print(f"Found new customer on page {page}")
-                    break
-                    
-                if not updated_customers_response.next:
-                    break
-                    
-                page += 1
-            
-            assert found, f"New customer with ID {created_customer.id} not found in any page"
-            print(f"Successfully verified customer {created_customer.id} exists via pagination")
-        
-        # 4. Get the customer by ID to verify details
-        print("\n=== 4. Verifying Customer Details ===")
-        fetched_customer = await client.customers.get_customer(created_customer.id)
-        assert fetched_customer.id == created_customer.id
-        assert fetched_customer.email == TEST_CUSTOMER_EMAIL
-        assert fetched_customer.first_name == "Test"
-        assert fetched_customer.last_name == f"Customer {TEST_TIMESTAMP}"
-        print("Successfully verified customer details")
-        
-        # 5. Clean up: Delete the customer we created
-        print("\n=== 5. Cleaning Up: Deleting Test Customer ===")
-        await client.customers.delete_customer(created_customer.id)
-        
-        # Verify deletion by checking the customer count went back to original
-        final_customers_response = await client.customers.list_customers()
-        final_customers = final_customers_response.results if final_customers_response else []
-        assert len(final_customers) == initial_customer_count, "Customer count should return to original after deletion"
-        
-        # Verify the customer ID is no longer in the list
-        final_customer_ids = [c.id for c in final_customers] if final_customers else []
-        assert created_customer.id not in final_customer_ids, "Customer ID should be removed after deletion"
-        
-        print(f"Successfully deleted test customer with ID: {created_customer.id}")
-        print("\n✅ All tests completed successfully!")
 
-    # Single test method now handles the complete workflow

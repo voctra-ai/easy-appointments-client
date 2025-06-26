@@ -4,6 +4,7 @@ Customers API manager for interacting with Easy Appointments customers.
 from typing import Optional
 
 from easyappointments.api.base import BaseAPI
+from easyappointments.exceptions import ResourceNotFoundError
 from easyappointments.models import Customer, PaginatedResponse
 
 
@@ -59,7 +60,7 @@ class CustomersAPI(BaseAPI):
         response = await self._get("/customers", params=params)
         return PaginatedResponse.from_dict(response, Customer)
     
-    async def get_customer(self, customer_id: int) -> Customer:
+    async def get_customer(self, customer_id: int) -> Optional[Customer]:
         """
         Get details of a specific customer.
         
@@ -67,13 +68,16 @@ class CustomersAPI(BaseAPI):
             customer_id: ID of the customer to retrieve
             
         Returns:
-            Customer object with the specified ID
+            Customer object if found, None otherwise
             
         Raises:
-            EasyAppointmentsError: If the API request fails or customer is not found
+            EasyAppointmentsError: If the API request fails for reasons other than 404
         """
-        response = await self._get(f"/customers/{customer_id}")
-        return Customer(**response)
+        try:
+            response = await self._get(f"/customers/{customer_id}")
+            return Customer(**response)
+        except ResourceNotFoundError:
+            return None
     
     async def create_customer(self, customer: Customer) -> Customer:
         """
@@ -121,14 +125,21 @@ class CustomersAPI(BaseAPI):
         response = await self._put(f"/customers/{customer_id}", data=customer_data)
         return Customer(**response)
     
-    async def delete_customer(self, customer_id: int) -> None:
+    async def delete_customer(self, customer_id: int) -> bool:
         """
         Delete a customer.
         
         Args:
             customer_id: ID of the customer to delete
             
+        Returns:
+            bool: True if deletion was successful, False otherwise
+            
         Raises:
-            EasyAppointmentsError: If the API request fails or customer is not found
+            EasyAppointmentsError: If the API request fails for reasons other than 404
         """
-        await self._delete(f"/customers/{customer_id}")
+        try:
+            await self._delete(f"/customers/{customer_id}")
+            return True
+        except ResourceNotFoundError:
+            return False

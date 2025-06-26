@@ -9,6 +9,7 @@ from easyappointments.api.admins import AdminsAPI
 from easyappointments.api.providers import ProvidersAPI
 from easyappointments.api.customers import CustomersAPI
 from easyappointments.api.availabilities import AvailabilitiesAPI
+from easyappointments.api.appointments import AppointmentsAPI
 
 
 class EasyAppointmentsClient:
@@ -78,6 +79,16 @@ class EasyAppointmentsClient:
         )
 
         self.availabilities = AvailabilitiesAPI(
+            api_key,
+            base_url,
+            http_client=self._http_client,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+            timeout=timeout,
+            logging_enabled=logging_enabled
+        )
+        
+        self.appointments = AppointmentsAPI(
             api_key,
             base_url,
             http_client=self._http_client,
